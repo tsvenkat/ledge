@@ -1,0 +1,144 @@
+service: gel
+frameworkVersion: '3'
+configValidationMode: error
+
+plugins:
+  - serverless-python-requirements
+  - serverless-plugin-resource-tagging
+#  - serverless-plugin-typescript
+
+custom:
+  pythonRequirements:
+    dockerizePip: false
+    pipCmdExtraArgs: ['--platform manylinux2014_x86_64', '--only-binary=:all:']
+
+  cf:
+    ttl:
+      default:
+        dev: 3600 # 1 hour
+        staging:  3600  # 1 hour
+        prod: 86400   # 1 day
+      max:
+        dev: 86400  # 1 day
+        staging: 86400  # 1 day
+        prod: 2592000   # 1 month
+    forward:
+      CookiesConfig:
+        CookieBehavior: whitelist
+        Cookies:
+          - Authorization
+          - Redirect
+      EnableAcceptEncodingBrotli: true
+      EnableAcceptEncodingGzip: true
+      HeadersConfig:
+        HeaderBehavior: whitelist
+        Headers:
+          - X-Forwarded-Origin
+          - X-Forwarded-User
+          - X-Secret
+          - Authorization
+          - X-Activation-Key
+      QueryStringsConfig:
+        QueryStringBehavior: all
+ 
+provider:
+  name: aws
+  region: us-east-1
+#  endpointType: REGIONAL
+  runtime: python3.9
+  stackTags:
+    Cluster: experiment
+    CostCenter: Cluster
+    Owner: TSV
+    InfraRole: "API Gateway"
+    Name: gel
+    Product: computecentral
+  environment:
+    DYNAMODB_TABLE: ${self:service}-${sls:stage}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource: "arn:aws:dynamodb:*:*:table/${self:provider.environment.DYNAMODB_TABLE}"
+  deploymentPrefix: serverless
+  deploymentBucket:
+    name: com.serverless.${sls:stage}-${self:service}.${self:provider.region}.deploys
+    blockPublicAccess: true
+    skipPolicySetup: true
+    versioning: true
+    tags:
+      Cluster: experiment
+      CostCenter: Cluster
+      Owner: TSV
+      InfraRole: "API Gateway"
+      Product: computecentral
+  cloudFront:
+    cachePolicies:
+      defaultCachePolicy:
+        MinTTL: 0
+        MaxTTL: ${self:custom.cf.ttl.max.${sls:stage}}
+        DefaultTTL: ${self:custom.cf.ttl.default.${sls:stage}}
+        ParametersInCacheKeyAndForwardedToOrigin: ${self:custom.cf.forward}
+      disabledCachePolicy:
+        MinTTL: 0
+        MaxTTL: 1
+        DefaultTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin: ${self:custom.cf.forward}
+
+functions:
+  routerFunc:
+    handler: routerFunc.handler
+    events:
+      - cloudFront:
+          eventType: origin-request
+          origin: https://demo.rugby.hpeserver.management
+          cachePolicy:
+            name: defaultCachePolicy
+          behavior:
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - PATCH
+              - POST
+              - DELETE
+            CachedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+
+resources:
+  Resources:
+    CloudFrontDistribution:
+      Type: AWS::CloudFront::Distribution
+      Properties:
+        DistributionConfig:
+          Enabled: true
+          DefaultRootObject: index.html
+          Aliases:
+            - gel.rugby.hpeserver.management
+          ViewerCertificate:
+            AcmCertificateArn: arn:aws:acm:us-east-1:647619633241:certificate/44156731-f25c-4587-810f-8ca5e001cdc6
+            SslSupportMethod: sni-only
+    GelDynamoDbTable:
+      Type: 'AWS::DynamoDB::Table'
+      DeletionPolicy: Delete
+      Properties:
+        AttributeDefinitions:
+          -
+            AttributeName: customer_id
+            AttributeType: S
+        KeySchema:
+          -
+            AttributeName: customer_id
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+        TableName: ${self:provider.environment.DYNAMODB_TABLE}
