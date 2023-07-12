@@ -1,4 +1,5 @@
 import os
+import re
 from urllib.parse import urlencode
 import boto3
 import uuid
@@ -8,13 +9,17 @@ from botocore.exceptions import ClientError
 
 
 JWKS_URL = "https://sso.common.cloud.hpe.com/pf/JWKS"
-app_inst_id = "5cf16eff-d5c5-42d6-b791-1d694e9a400f"
+COM_CLUSTER_2_ORIGIN = "qa.rugby.hpeserver.management"
+APP_INST_ID = "5cf16eff-d5c5-42d6-b791-1d694e9a400f"
 
 '''
 Make use of the customer_id value that is passed by the authorizer
 to identify the appropriate target COM cluster url.
 Build a redirect url using this and return to the caller with a
 redirect response.
+Note: Cloud Front will make a new request to the Origin *after*
+this function returns. Hence it is important that this function
+completes quickly to avoid any latency.
 '''
 def handler(event, context):
     print(f"REQUEST EVENT: {event}")
@@ -24,7 +29,8 @@ def handler(event, context):
     response = {}
 
     # Get token from the header
-    token = headers['authorization'][0]['value']
+    token_header = headers['authorization'][0]['value']
+    token = parse_auth_token(token_header)
 
     # Authenticate and get claims from the token
     claims, err = get_claims_from_token(token)
@@ -47,9 +53,13 @@ def handler(event, context):
         response['statusDescription'] = 'Forbidden'
         return response
 
-    # Update the host/origin
-    # hard coding this for now for testing
-    com_host = "qa.rugby.hpeserver.management"
+    if base_url is None:
+        # Update the host/origin
+        # hard coding this for now for testing
+        com_host = COM_CLUSTER_2_ORIGIN
+    else:
+        com_host = base_url
+
     request['origin']['custom']['domainName'] = com_host
     headers['host'] = [{'key':'host', 'value': com_host}]
 
@@ -68,6 +78,8 @@ def get_cluster_base_url_from_db(customer_id):
                 'customer_id': customer_id
             }
         )
+        # TODO: this check may be removed in favor of handling the
+        #       ClientError exception
         if not 'Item' in db_response:
             print(f"Customer {customer_id} not found in DB")
         else:
@@ -113,6 +125,11 @@ def dynamo_table():
     ddb = boto3.resource("dynamodb", region_name=region)
     return ddb.Table(table_name)
 
+'''
+Skip the "Bearer " prefix and extract the token from the token_header
+'''
+def parse_auth_token(token_header):
+    return re.sub('^bearer ', '', token_header, flags=re.IGNORECASE)
 
 def get_claims_from_token(token):
     claims = None
@@ -133,7 +150,7 @@ def decode_token(token):
         pub_key = client.get_signing_key_from_jwt(token).key
         claims = jwt.decode(token, pub_key, algorithms=["RS256"], audience="aud")
         client_id = claims.get('client_id')
-        if not client_id or client_id != app_inst_id:
+        if not client_id or client_id != APP_INST_ID:
             err = ValueError(f"Invalid app instance id: {client_id}")
     except Exception as e:
         print("The provided token is invalid!")

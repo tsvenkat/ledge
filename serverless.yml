@@ -5,7 +5,6 @@ configValidationMode: error
 plugins:
   - serverless-python-requirements
   - serverless-plugin-resource-tagging
-#  - serverless-plugin-typescript
 
 custom:
   pythonRequirements:
