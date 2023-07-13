@@ -60,6 +60,9 @@ def handler(event, context):
     else:
         com_host = base_url
 
+    print(f"Request Origin: {request['origin']['custom']['domainName']}")
+    print(f"Routed Origin: {com_host}")
+
     request['origin']['custom']['domainName'] = com_host
     headers['host'] = [{'key':'host', 'value': com_host}]
 

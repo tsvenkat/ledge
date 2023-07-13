@@ -5,7 +5,7 @@ configValidationMode: error
 plugins:
   - serverless-python-requirements
   - serverless-plugin-resource-tagging
-
+  - serverless-deployment-bucket
 custom:
   pythonRequirements:
     dockerizePip: false

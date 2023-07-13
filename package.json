@@ -1,5 +1,6 @@
 {
   "devDependencies": {
+    "serverless-deployment-bucket": "^1.6.0",
     "serverless-plugin-resource-tagging": "^1.2.0",
     "serverless-plugin-typescript": "^2.1.5",
     "serverless-python-requirements": "^6.0.0",
