@@ -9,6 +9,6 @@ entries:
     name: webapp1
     type: application
     urls:
-    - webapp1-0.0.1.tgz
+    - charts/webapp1-0.0.1.tgz
     version: 0.0.1
 generated: "2023-09-19T18:10:34.730902-06:00"
